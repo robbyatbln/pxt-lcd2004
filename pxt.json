@@ -1,7 +1,7 @@
 {
-    "name": "display",
-    "version": "0.0.1",
-    "description": "LCD package for the Seeed Studio Grove - LCD",
+    "name": "lcd2004",
+    "version": "1.0.0",
+    "description": "HD44780 LCD 20x4 with PCF8574 I2C adapter for Calliope mini",
     "license": "MIT",
     "dependencies": {
         "core": "*"
@@ -9,7 +9,7 @@
     "files": [
         "README.md",
         "display.ts",
-	"_locales/de/display-strings.json",
+        "_locales/de/display-strings.json",
         "_locales/de/display-jsdoc-strings.json"
     ],
     "testFiles": [

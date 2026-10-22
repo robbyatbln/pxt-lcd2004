@@ -1,215 +1,119 @@
-/*
-*	
-*/
-//% color=#0fbc11 icon="\uf1ab" block="display"
+// PCF8574 wiring: P0=RS, P1=RW, P2=E, P3=backlight, P4..7=D4..7.
+//% color=#0fbc11 icon="\uf1ab" block="LCD 20x4"
 namespace display {
+    let address = 0x27
+    let light = 8
+    let initialized = false
+    let workerStarted = false
+    let rows = ["", "", "", ""]
+    let speeds = [300, 300, 300, 300]
+    let positions = [0, 0, 0, 0]
+    let deadlines = [0, 0, 0, 0]
+    let dirty = [false, false, false, false]
+    let offsets = [0x00, 0x40, 0x14, 0x54]
 
-    let isnotinitialized = true
-
-    //every line gets its own buffer
-    let row0 = ""
-    let row1 = ""
-
-    //every line gets its own speed
-    let row0Speed = 0
-    let row1Speed = 0
-
-    //prevents the flooding of the lcd
-    //only write new text 
-    let row0Written = true
-    let row1Written = true
-
-    //a poormans semaphore
-    let lcdUsed = false
-
-    //syncronous writing of row0
-    //if the string in row0 is greater than 16 characters(the display with) the screen is scrolled
-    //if row0 is lower than 16 the screen will be written only with the new incoming string
-
-    control.inBackground(() => {
-        let pos0 = 0
-        init()
-        while (true) {
-            while (lcdUsed) {
-            }
-            basic.pause(1)
-            lcdUsed = true
-            if (row0.length > 16) {
-                if (pos0 == 1) {
-                    basic.pause(1000)
-                }
-                setCursor(0, 0)
-                writeLCD(row0.substr(pos0, 16))
-                basic.pause(row0Speed)
-                pos0 += 1
-                if (pos0 == (row0.length - 15)) {
-                    pos0 = 0
-                    basic.pause(1000)
-                }
-            } else {
-                if (row0Written) {
-                    clearrow0()
-                    setCursor(0, 0)
-                    writeLCD(row0)
-                    row0Written = false
-                }
-            }
-            lcdUsed = false
-
-        }
-    })
-
-    control.inBackground(() => {
-        let pos1 = 0
-        init()
-        while (true) {
-            while (lcdUsed) {
-            }
-            basic.pause(1)
-            lcdUsed = true
-            if (row1.length > 16) {
-                if (pos1 == 1) {
-                    basic.pause(1000)
-                }
-                setCursor(0, 1)
-                writeLCD(row1.substr(pos1, 16))
-                basic.pause(row1Speed)
-                pos1 += 1
-                if (pos1 == (row1.length - 15)) {
-                    pos1 = 0
-                    basic.pause(1000)
-                }
-            } else {
-                if (row1Written) {
-                    clearrow1()
-                    setCursor(0, 1)
-                    writeLCD(row1)
-                    row1Written = false
-                }
-            }
-            lcdUsed = false
-
-        }
-    })
-
-    function writeLCD(str: string) {
-        let buf = pins.createBuffer(str.length + 1)
-        buf[0] = 0x40
-        for (let index = 1; index <= str.length; index++) {
-            buf[index] = str.charCodeAt(index - 1)
-        }
-        pins.i2cWriteBuffer(0x3E, buf)
+    function nibble(value: number) {
+        let data = value | light
+        pins.i2cWriteNumber(address, data, NumberFormat.UInt8BE)
+        pins.i2cWriteNumber(address, data | 4, NumberFormat.UInt8BE)
+        control.waitMicros(1)
+        pins.i2cWriteNumber(address, data, NumberFormat.UInt8BE)
+        control.waitMicros(50)
     }
-
-    /**
-     * prints a string on the LCD display
-     * @param str text to display
-     * @param row row to be written to
-     * @param speed speed of the scrolling text
-     */
-    //% weight=87 blockGap=8
-    //% block="write | %str | to | row | %row | with speed | %speed | ms" 
-    //% blockId=write_String
-    //% icon="\uf1ab"
+    function send(value: number, rs: number) {
+        nibble((value & 0xf0) | rs)
+        nibble(((value << 4) & 0xf0) | rs)
+    }
+    function render(row: number) {
+        send(0x80 | offsets[row], 0)
+        let text = rows[row].substr(positions[row], 20)
+        for (let col = 0; col < 20; col++) {
+            let code = col < text.length ? text.charCodeAt(col) : 32
+            send(code >= 32 && code <= 126 ? code : 63, 1)
+        }
+    }
+    function ensureInitialized() {
+        if (initialized) return
+        // No fiber yields during initialization or a complete row transfer.
+        control.waitMicros(50000)
+        nibble(0x30)
+        control.waitMicros(4500)
+        nibble(0x30)
+        control.waitMicros(4500)
+        nibble(0x30)
+        control.waitMicros(150)
+        nibble(0x20)
+        send(0x28, 0)
+        send(0x08, 0)
+        send(0x01, 0)
+        control.waitMicros(2000)
+        send(0x06, 0)
+        send(0x0c, 0)
+        initialized = true
+        if (!workerStarted) {
+            workerStarted = true
+            control.inBackground(() => {
+                while (true) {
+                    for (let row = 0; row < 4; row++) {
+                        let now = input.runningTime()
+                        if (dirty[row]) {
+                            render(row)
+                            dirty[row] = false
+                            deadlines[row] = now + 1000
+                        } else if (rows[row].length > 20 && now >= deadlines[row]) {
+                            let last = rows[row].length - 20
+                            positions[row] = positions[row] >= last ? 0 : positions[row] + 1
+                            render(row)
+                            deadlines[row] = now + (positions[row] == 0 || positions[row] == last ? 1000 : speeds[row])
+                        }
+                    }
+                    basic.pause(10)
+                }
+            })
+        }
+    }
+    /** Initialize the LCD with its 7-bit adapter address, usually 39 or 63. */
+    //% blockId=lcd2004_init block="initialize LCD 20x4 at I2C address %i2cAddress" weight=100
+    //% i2cAddress.defl=39 i2cAddress.min=32 i2cAddress.max=63
+    export function init(i2cAddress: number = 39) {
+        if (i2cAddress < 0x20 || i2cAddress > 0x3f || i2cAddress != Math.floor(i2cAddress)) return
+        address = i2cAddress
+        initialized = false
+        ensureInitialized()
+        for (let row = 0; row < 4; row++) {
+            positions[row] = 0
+            dirty[row] = true
+        }
+    }
+    /** Write row 0 to 3. Text longer than 20 characters scrolls independently. */
+    //% weight=87 blockGap=8 blockId=write_String
+    //% block="write %str to row %row with speed %speed ms"
+    //% row.min=0 row.max=3 speed.min=20 speed.defl=300
     export function writeString(str: string, row: number, speed: number) {
-
-        if (row == 0) {
-            row0Speed = speed
-            row0 = str
-            row0Written = true
+        if (row < 0 || row > 3 || row != Math.floor(row)) return
+        ensureInitialized()
+        rows[row] = str
+        speeds[row] = Math.max(20, speed)
+        positions[row] = 0
+        dirty[row] = true
+    }
+    /** Clear all rows and stop scrolling. */
+    //% blockId=lcd2004_clear block="clear LCD" weight=80
+    export function clear() {
+        ensureInitialized()
+        for (let row = 0; row < 4; row++) {
+            rows[row] = ""
+            positions[row] = 0
+            dirty[row] = false
         }
-        if (row == 1) {
-            row1Speed = speed
-            row1 = str
-            row1Written = true
-        }
-
+        send(0x01, 0)
+        control.waitMicros(2000)
     }
-
-    function clearrow0() {
-        setCursor(0, 0)
-        writeLCD("                ")
+    /** Switch the fixed-color backlight on or off. */
+    //% blockId=lcd2004_backlight block="LCD backlight %enabled" weight=70
+    export function backlight(enabled: boolean) {
+        ensureInitialized()
+        light = enabled ? 8 : 0
+        pins.i2cWriteNumber(address, light, NumberFormat.UInt8BE)
     }
-
-    function clearrow1() {
-        setCursor(0, 1)
-        writeLCD("                ")
-    }
-
-    function init() {
-        if (isnotinitialized) {
-            basic.pause(50)
-
-            setLCDCmd(Command.LCD_2LINE | 0x10)
-            basic.pause(5)
-            setLCDCmd(Command.LCD_2LINE | 0x10)
-            basic.pause(1)
-            setLCDCmd(Command.LCD_2LINE | 0x10)
-            setLCDCmd(Command.LCD_2LINE)
-            setLCDCmd(Command.LCD_DISPLAYON)
-            setLCDCmd(Command.LCD_CLEARDISPLAY)
-            basic.pause(2)
-            setLCDCmd(Command.LCD_ENTRYLEFT | Command.LCD_ENTRYSHIFTDECREMENT)
-        }
-        isnotinitialized = false
-    }
-
-    function setLCDCmd(cmd: number) {
-        pins.i2cWriteNumber(0x3E, 0x80 << 8 | cmd, NumberFormat.Int16BE)
-    }
-
-    function setCursor(col: number, row: number) {
-        col = (row == 0 ? col | 0x80 : col | 0xc0);
-        setLCDCmd(col)
-    }
-}
-
-enum Command {
-    LCD_ADDRESS = 0x3E,
-    RGB_ADDRESS = 0x62,
-
-    //Hintergrundfarben Adressen
-    REG_RED = 0x04,
-    REG_GREEN = 0x03,
-    REG_BLUE = 0x02,
-
-    //Hintergrundfarben modus
-    REG_MODE1 = 0x00,
-    REG_MODE2 = 0x01,
-    REG_OUTPUT = 0x08,
-
-    //command Adressen
-    LCD_CLEARDISPLAY = 0x01,
-    LCD_RETURNHOME = 0x02,
-    LCD_ENTRYMODESET = 0x04,
-    LCD_DISPLAYCONTROL = 0x08,
-    LCD_CURSORSHIFT = 0x10,
-    LCD_FUNCTIONSET = 0x20,
-    LCD_SETCGRAMADDR = 0x40,
-    LCD_SETDDRAMADDR = 0x80,
-
-    //
-    LCD_ENTRYRIGHT = 0x00 | LCD_ENTRYMODESET,
-    LCD_ENTRYLEFT = 0x02 | LCD_ENTRYMODESET,
-    LCD_ENTRYSHIFTINCREMENT = 0x01 | LCD_ENTRYMODESET,
-    LCD_ENTRYSHIFTDECREMENT = 0x00 | LCD_ENTRYMODESET,
-
-    LCD_DISPLAYON = 0x04 | LCD_DISPLAYCONTROL,
-    LCD_DISPLAYOFF = 0x00 | LCD_DISPLAYCONTROL,
-    LCD_CURSORON = 0x02 | LCD_DISPLAYCONTROL,
-    LCD_CURSOROFF = 0x00 | LCD_DISPLAYCONTROL,
-    LCD_BLINKON = 0x01 | LCD_DISPLAYCONTROL,
-    LCD_BLINKOFF = 0x00 | LCD_DISPLAYCONTROL,
-
-    LCD_DISPLAYMOVE = 0x08 | LCD_CURSORSHIFT,
-    LCD_CURSORMOVE = 0x00 | LCD_CURSORSHIFT,
-    LCD_MOVERIGHT = 0x04 | LCD_CURSORSHIFT,
-    LCD_MOVELEFT = 0x00 | LCD_CURSORSHIFT,
-
-    LCD_8BITMODE = 0x10 | LCD_FUNCTIONSET,
-    LCD_4BITMODE = 0x00 | LCD_FUNCTIONSET,
-    LCD_2LINE = 0x08 | LCD_FUNCTIONSET,
-    LCD_1LINE = 0x00 | LCD_FUNCTIONSET,
-    LCD_5x10DOTS = 0x04 | LCD_FUNCTIONSET,
-    LCD_5x8DOTS = 0x00 | LCD_FUNCTIONSET
 }

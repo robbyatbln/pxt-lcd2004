@@ -1,5 +1,5 @@
-display.writeString("500 millisekunden sind schneller als ...", 0, 500)
-display.writeString("2000 millisekunden", 1, 2000)
-
-basic.forever(() => {
-})
+display.init(0x27)
+display.writeString("Hallo Calliope!", 0, 300)
+display.writeString("LCD 2004 mit I2C", 1, 300)
+display.writeString("20 Zeichen x 4 Zeilen", 2, 300)
+display.writeString("Dieser lange Text laeuft durch die vierte Zeile.", 3, 250)

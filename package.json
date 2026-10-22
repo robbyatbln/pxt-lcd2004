@@ -1,0 +1,10 @@
+{
+  "name": "calliope-lcd2004-checks",
+  "private": true,
+  "scripts": {
+    "test": "tsc --noEmit --strict --target es5 pxt-stubs.d.ts display.ts test.ts && node driver.test.cjs"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}
