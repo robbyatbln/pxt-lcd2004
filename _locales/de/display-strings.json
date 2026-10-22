@@ -1,3 +1,6 @@
 {
-	"display.writeString|block": "Schreibe | %str | auf Zeile | %row | und bewege die Zeichen mit | %speed | ms"
+    "display.init|block": "initialisiere LCD 20x4 mit I2C-Adresse %i2cAddress",
+    "display.writeString|block": "schreibe %str auf Zeile %row mit Laufschrift-Intervall %speed ms",
+    "display.clear|block": "LCD loeschen",
+    "display.backlight|block": "LCD Hintergrundbeleuchtung %enabled"
 }

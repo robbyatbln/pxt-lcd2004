@@ -1,3 +1,6 @@
 {
-	"display.writeString": "Schreibt eine Zeichenfolge auf eine Zeile. Wenn die Zeichenfolge länder ist als 16 Zeichen, wird das Display mit der angegebenen Geschwindigkeit gescrollt"
+    "display.init": "Initialisiert das LCD. Uebliche 7-Bit-Adressen: 39 (0x27) oder 63 (0x3F).",
+    "display.writeString": "Schreibt auf Zeile 0 bis 3. Texte mit mehr als 20 Zeichen laufen automatisch durch. ASCII-Zeichen werden unterstuetzt.",
+    "display.clear": "Loescht alle vier Zeilen und beendet ihre Laufschriften.",
+    "display.backlight": "Schaltet die Hintergrundbeleuchtung ein oder aus."
 }
